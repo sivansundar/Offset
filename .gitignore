@@ -1,0 +1,15 @@
+.DS_Store
+
+# Xcode user data
+xcuserdata/
+*.xcuserstate
+
+# Local build output
+build/
+
+# Codex local environment wiring
+.codex/
+
+# Swift Package Manager
+.build/
+Package.resolved

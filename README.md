@@ -9,6 +9,13 @@ It supports two fast workflows:
 
 Offset is open source and welcomes contributions. The project is licensed under GPL-3.0.
 
+## Preview
+
+
+https://github.com/user-attachments/assets/e07b263c-731e-4700-93da-973c83c11685
+
+
+
 ## Features
 
 - Menu bar app with live local time

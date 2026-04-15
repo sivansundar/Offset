@@ -17,7 +17,7 @@ final class MenuBarController {
         statusBar: NSStatusBar = .system,
         clock: ClockProviding = SystemClock(),
         viewModel: TimeZoneViewModel? = nil,
-        calendar: Calendar = .current
+        calendar: Calendar = .autoupdatingCurrent
     ) {
         self.statusItem = statusBar.statusItem(withLength: NSStatusItem.variableLength)
         self.clock = clock
@@ -26,7 +26,7 @@ final class MenuBarController {
         self.hostingController = NSHostingController(rootView: TimeZoneView(viewModel: self.viewModel))
 
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 320, height: 360)
+        popover.contentSize = NSSize(width: 388, height: 520)
         popover.contentViewController = hostingController
 
         if let button = statusItem.button {
@@ -65,16 +65,20 @@ final class MenuBarController {
 
     func scheduleTimer() {
         timer = Timer.scheduledTimer(withTimeInterval: Self.secondsUntilNextMinute(from: clock.now(), calendar: calendar), repeats: false) { [weak self] _ in
-            self?.refreshStatusTitle()
-            self?.scheduleTimer()
+            Task { @MainActor [weak self] in
+                self?.refreshStatusTitle()
+                self?.scheduleTimer()
+            }
         }
     }
 
     func bindViewModel() {
-        viewModel.$inlineResult
+        viewModel.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.updatePopoverSize()
+                DispatchQueue.main.async {
+                    self?.updatePopoverSize()
+                }
             }
             .store(in: &cancellables)
     }
@@ -83,8 +87,8 @@ final class MenuBarController {
         hostingController.view.layoutSubtreeIfNeeded()
         let fittingSize = hostingController.view.fittingSize
         popover.contentSize = NSSize(
-            width: max(320, fittingSize.width),
-            height: max(360, fittingSize.height)
+            width: max(388, fittingSize.width),
+            height: max(420, fittingSize.height)
         )
     }
 

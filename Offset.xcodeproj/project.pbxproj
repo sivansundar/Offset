@@ -6,6 +6,16 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		A1B2C3DE2F8D400000BF409C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 977B45932F8D2B9500BF409C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 977B459A2F8D2B9500BF409C;
+			remoteInfo = Offset;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		977B459B2F8D2B9500BF409C /* Offset.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Offset.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3D42F8D400000BF409C /* OffsetTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OffsetTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -23,16 +33,6 @@
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
-
-/* Begin PBXContainerItemProxy section */
-		A1B2C3DE2F8D400000BF409C /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 977B45932F8D2B9500BF409C /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 977B459A2F8D2B9500BF409C;
-			remoteInfo = Offset;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		977B45982F8D2B9500BF409C /* Frameworks */ = {

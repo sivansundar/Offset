@@ -42,5 +42,60 @@ final class ServiceHandlerTests: XCTestCase {
 }
 
 private struct TestServicePresenter: ServiceResultPresenting {
-    func present(_ descriptor: ServiceResultDescriptor) {}
+    func present(_ descriptor: ServiceResultDescriptor, anchor: ServicePresentationAnchor) {}
+}
+
+private struct TestAnchorResolver: ServicePresentationAnchoring {
+    let anchor: ServicePresentationAnchor
+
+    func resolveAnchor() -> ServicePresentationAnchor {
+        anchor
+    }
+}
+
+@MainActor
+final class TooltipPresenterTests: XCTestCase {
+    func testTooltipFrameAnchorsAboveSelectionWhenThereIsRoom() {
+        let frame = TooltipPresenter.frameForTooltip(
+            tooltipSize: NSSize(width: 280, height: 80),
+            anchor: ServicePresentationAnchor(
+                selectionRect: CGRect(x: 100, y: 300, width: 120, height: 24),
+                pointerLocation: CGPoint(x: 0, y: 0)
+            ),
+            visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600)
+        )
+
+        XCTAssertEqual(frame.origin.x, 20, accuracy: 0.001)
+        XCTAssertEqual(frame.origin.y, 338, accuracy: 0.001)
+        XCTAssertEqual(frame.width, 280, accuracy: 0.001)
+        XCTAssertEqual(frame.height, 80, accuracy: 0.001)
+    }
+
+    func testTooltipFrameFallsBelowSelectionWhenAboveWouldOverflow() {
+        let frame = TooltipPresenter.frameForTooltip(
+            tooltipSize: NSSize(width: 280, height: 80),
+            anchor: ServicePresentationAnchor(
+                selectionRect: CGRect(x: 100, y: 560, width: 120, height: 24),
+                pointerLocation: CGPoint(x: 0, y: 0)
+            ),
+            visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600)
+        )
+
+        XCTAssertEqual(frame.origin.x, 20, accuracy: 0.001)
+        XCTAssertEqual(frame.origin.y, 466, accuracy: 0.001)
+    }
+
+    func testTooltipFrameFallsBackToPointerWhenSelectionRectIsUnavailable() {
+        let frame = TooltipPresenter.frameForTooltip(
+            tooltipSize: NSSize(width: 280, height: 80),
+            anchor: ServicePresentationAnchor(
+                selectionRect: nil,
+                pointerLocation: CGPoint(x: 50, y: 40)
+            ),
+            visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600)
+        )
+
+        XCTAssertEqual(frame.origin.x, 12, accuracy: 0.001)
+        XCTAssertEqual(frame.origin.y, 55, accuracy: 0.001)
+    }
 }

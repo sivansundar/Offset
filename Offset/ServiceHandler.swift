@@ -3,7 +3,7 @@ import ApplicationServices
 import Foundation
 import SwiftUI
 
-struct ServiceResultDescriptor: Equatable {
+struct ServiceResultDescriptor: Equatable, Error {
     let title: String
     let body: String
     var isLoading = false
@@ -16,6 +16,7 @@ struct ServicePresentationAnchor: Equatable {
 
 protocol ServiceResultPresenting {
     func present(_ descriptor: ServiceResultDescriptor, anchor: ServicePresentationAnchor)
+    func dismiss()
 }
 
 @MainActor
@@ -39,6 +40,10 @@ final class TooltipPresenter: ServiceResultPresenting {
         panel.setFrame(frame, display: false)
         panel.orderFrontRegardless()
         installDismissMonitorsIfNeeded()
+    }
+
+    func dismiss() {
+        dismissTooltip()
     }
 
     private func installDismissMonitorsIfNeeded() {
@@ -178,7 +183,11 @@ private struct ServiceTooltipView: View {
 final class ServiceHandler: NSObject {
     private let converter: TimeConverter
     private let presenter: ServiceResultPresenting
+    private let schedulePresenter: MeetingDraftPresenting
     private let anchorResolver: ServicePresentationAnchoring
+    private let draftFactory: ScheduleMeetingDraftFactory
+    private let draftRouter: CalendarDraftRouting
+    private let clipboard: ClipboardWriting
     private let preferencesStore: PreferencesStore
     private let destinationTimeZoneProvider: () -> TimeZone
     private let nowProvider: () -> Date
@@ -187,7 +196,11 @@ final class ServiceHandler: NSObject {
     init(
         converter: TimeConverter = TimeConverter(),
         presenter: ServiceResultPresenting? = nil,
+        schedulePresenter: MeetingDraftPresenting? = nil,
         anchorResolver: ServicePresentationAnchoring = AccessibilitySelectionAnchorResolver(),
+        draftFactory: ScheduleMeetingDraftFactory = ScheduleMeetingDraftFactory(),
+        draftRouter: CalendarDraftRouting = CalendarDraftRouter(),
+        clipboard: ClipboardWriting = PasteboardClipboard(),
         preferencesStore: PreferencesStore = PreferencesStore(),
         destinationTimeZoneProvider: @escaping () -> TimeZone = { .autoupdatingCurrent },
         nowProvider: @escaping () -> Date = Date.init,
@@ -195,7 +208,11 @@ final class ServiceHandler: NSObject {
     ) {
         self.converter = converter
         self.presenter = presenter ?? TooltipPresenter()
+        self.schedulePresenter = schedulePresenter ?? ScheduleMeetingPresenter()
         self.anchorResolver = anchorResolver
+        self.draftFactory = draftFactory
+        self.draftRouter = draftRouter
+        self.clipboard = clipboard
         self.preferencesStore = preferencesStore
         self.destinationTimeZoneProvider = destinationTimeZoneProvider
         self.nowProvider = nowProvider
@@ -223,6 +240,35 @@ final class ServiceHandler: NSObject {
         }
     }
 
+    func prepareScheduleMeeting(from text: String) async -> Result<ScheduleMeetingDraft, ServiceResultDescriptor> {
+        let destinationTimeZone = destinationTimeZoneProvider()
+
+        switch await converter.parseAndConvert(
+            text,
+            usingAppleIntelligence: preferencesStore.loadUseAppleIntelligence(),
+            to: destinationTimeZone,
+            now: nowProvider(),
+            calendar: calendarProvider()
+        ) {
+        case let .success(result):
+            return .success(
+                draftFactory.makeDraft(
+                    from: result,
+                    sourceText: text,
+                    destinationTimeZone: destinationTimeZone,
+                    preferredProvider: preferencesStore.loadPreferredCalendarDraftProvider()
+                )
+            )
+        case let .failure(error):
+            return .failure(
+                ServiceResultDescriptor(
+                    title: "Offset - Schedule Meeting",
+                    body: schedulingFailureMessage(for: error)
+                )
+            )
+        }
+    }
+
     @objc func convertSelectedTime(
         _ pasteboard: NSPasteboard,
         userData: String?,
@@ -243,6 +289,86 @@ final class ServiceHandler: NSObject {
             let descriptor = await handleSelectedText(text)
             presenter.present(descriptor, anchor: anchor)
         }
+    }
+
+    @objc func scheduleMeeting(
+        _ pasteboard: NSPasteboard,
+        userData: String?,
+        error: AutoreleasingUnsafeMutablePointer<NSString?>
+    ) {
+        let text = pasteboard.string(forType: .string) ?? ""
+        let anchor = anchorResolver.resolveAnchor()
+        presenter.present(
+            ServiceResultDescriptor(
+                title: "Offset - Schedule Meeting",
+                body: "Preparing your meeting draft...",
+                isLoading: true
+            ),
+            anchor: anchor
+        )
+
+        Task { @MainActor in
+            let result = await prepareScheduleMeeting(from: text)
+            presenter.dismiss()
+
+            switch result {
+            case let .success(draft):
+                schedulePresenter.present(
+                    draft,
+                    anchor: anchor,
+                    onSubmit: { [weak self] submission in
+                        guard let self else { return }
+
+                        preferencesStore.savePreferredCalendarDraftProvider(submission.provider)
+                        schedulePresenter.dismiss()
+
+                        guard draftRouter.openDraft(submission) else {
+                            presenter.present(
+                                ServiceResultDescriptor(
+                                    title: "Offset - Schedule Meeting",
+                                    body: "Couldn't open the calendar draft."
+                                ),
+                                anchor: anchor
+                            )
+                            return
+                        }
+                    },
+                    onCopy: { [weak self] submission in
+                        guard let self, let url = draftRouter.draftURL(for: submission) else {
+                            return
+                        }
+
+                        clipboard.copy(url.absoluteString)
+                    },
+                    onCancel: { [weak self] in
+                        self?.schedulePresenter.dismiss()
+                    }
+                )
+            case let .failure(descriptor):
+                presenter.present(descriptor, anchor: anchor)
+            }
+        }
+    }
+
+    private func schedulingFailureMessage(for error: TimeParseError) -> String {
+        switch error {
+        case .missingTimeZone, .unsupportedTimeZone, .ambiguousTimeZone:
+            return "Couldn't find a time to schedule. Include a timezone like 'PT' or 'EST'."
+        case .missingTime, .invalidFormat:
+            return "Couldn't find a time to schedule in the selected text."
+        }
+    }
+}
+
+protocol ClipboardWriting {
+    func copy(_ string: String)
+}
+
+struct PasteboardClipboard: ClipboardWriting {
+    func copy(_ string: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(string, forType: .string)
     }
 }
 

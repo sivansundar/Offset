@@ -6,6 +6,7 @@ It supports two fast workflows:
 
 - Convert a typed input like `9AM PT`, `3:30 PM EST`, or `tomorrow 9AM JST`
 - Select text anywhere on macOS and use the Services action to convert it in place
+- Select text anywhere on macOS and use the `Schedule meeting` service to create an Apple Calendar or Google Calendar draft
 
 Offset is open source and welcomes contributions. The project is licensed under GPL-3.0.
 
@@ -24,6 +25,7 @@ https://github.com/user-attachments/assets/e07b263c-731e-4700-93da-973c83c11685
 - World clock dashboard with configurable cities
 - macOS Services integration for selected text
 - Lightweight tooltip presentation near the current selection
+- Meeting scheduling from selected text with Apple Calendar and Google Calendar draft handoff
 - Unit tests covering parsing, menu bar timing logic, and service presentation behavior
 
 ## Requirements
@@ -95,7 +97,10 @@ Offset stores a customizable list of world clock cities in `UserDefaults` and re
 
 ### macOS Services
 
-Offset registers a Services action named `What's the time here?` so selected text can be converted from any app that supports macOS Services.
+Offset registers two Services actions for selected text in apps that support macOS Services:
+
+- `What's the time here?`
+- `Schedule meeting`
 
 ## Contributing
 

@@ -6,6 +6,7 @@ import SwiftUI
 struct ServiceResultDescriptor: Equatable {
     let title: String
     let body: String
+    var isLoading = false
 }
 
 struct ServicePresentationAnchor: Equatable {
@@ -142,10 +143,22 @@ private struct ServiceTooltipView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.primary)
 
-            Text(descriptor.body)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if descriptor.isLoading {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+
+                    Text(descriptor.body)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                Text(descriptor.body)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -166,6 +179,7 @@ final class ServiceHandler: NSObject {
     private let converter: TimeConverter
     private let presenter: ServiceResultPresenting
     private let anchorResolver: ServicePresentationAnchoring
+    private let preferencesStore: PreferencesStore
     private let destinationTimeZoneProvider: () -> TimeZone
     private let nowProvider: () -> Date
     private let calendarProvider: () -> Calendar
@@ -174,6 +188,7 @@ final class ServiceHandler: NSObject {
         converter: TimeConverter = TimeConverter(),
         presenter: ServiceResultPresenting? = nil,
         anchorResolver: ServicePresentationAnchoring = AccessibilitySelectionAnchorResolver(),
+        preferencesStore: PreferencesStore = PreferencesStore(),
         destinationTimeZoneProvider: @escaping () -> TimeZone = { .autoupdatingCurrent },
         nowProvider: @escaping () -> Date = Date.init,
         calendarProvider: @escaping () -> Calendar = { .autoupdatingCurrent }
@@ -181,14 +196,16 @@ final class ServiceHandler: NSObject {
         self.converter = converter
         self.presenter = presenter ?? TooltipPresenter()
         self.anchorResolver = anchorResolver
+        self.preferencesStore = preferencesStore
         self.destinationTimeZoneProvider = destinationTimeZoneProvider
         self.nowProvider = nowProvider
         self.calendarProvider = calendarProvider
     }
 
-    func handleSelectedText(_ text: String) -> ServiceResultDescriptor {
-        switch converter.parseAndConvert(
+    func handleSelectedText(_ text: String) async -> ServiceResultDescriptor {
+        switch await converter.parseAndConvert(
             text,
+            usingAppleIntelligence: preferencesStore.loadUseAppleIntelligence(),
             to: destinationTimeZoneProvider(),
             now: nowProvider(),
             calendar: calendarProvider()
@@ -212,8 +229,20 @@ final class ServiceHandler: NSObject {
         error: AutoreleasingUnsafeMutablePointer<NSString?>
     ) {
         let text = pasteboard.string(forType: .string) ?? ""
-        let descriptor = handleSelectedText(text)
-        presenter.present(descriptor, anchor: anchorResolver.resolveAnchor())
+        let anchor = anchorResolver.resolveAnchor()
+        presenter.present(
+            ServiceResultDescriptor(
+                title: "Offset - Time Converted",
+                body: "Checking the selected text...",
+                isLoading: true
+            ),
+            anchor: anchor
+        )
+
+        Task { @MainActor in
+            let descriptor = await handleSelectedText(text)
+            presenter.present(descriptor, anchor: anchor)
+        }
     }
 }
 

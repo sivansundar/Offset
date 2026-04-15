@@ -28,9 +28,14 @@ enum TimeParseError: LocalizedError, Equatable {
 
 struct TimeConverter {
     private let abbreviationMap: [String: String]
+    private let appleIntelligenceParser: AppleIntelligenceTimeParsing
 
-    init(abbreviationMap: [String: String] = Self.defaultAbbreviationMap) {
+    init(
+        abbreviationMap: [String: String] = Self.defaultAbbreviationMap,
+        appleIntelligenceParser: AppleIntelligenceTimeParsing = AppleIntelligenceTimeParser()
+    ) {
         self.abbreviationMap = abbreviationMap
+        self.appleIntelligenceParser = appleIntelligenceParser
     }
 
     func parseAndConvert(
@@ -83,6 +88,43 @@ struct TimeConverter {
             destinationTimeZone: destinationTimeZone,
             dayReference: dayReference
         ))
+    }
+
+    func parseAndConvert(
+        _ input: String,
+        usingAppleIntelligence: Bool,
+        to destinationTimeZone: TimeZone = .current,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) async -> Result<ConversionResult, TimeParseError> {
+        let standardResult = parseAndConvert(
+            input,
+            to: destinationTimeZone,
+            now: now,
+            calendar: calendar
+        )
+
+        guard usingAppleIntelligence else {
+            return standardResult
+        }
+
+        if case .success = standardResult {
+            return standardResult
+        }
+
+        guard let normalizedInput = await appleIntelligenceParser.normalizeTimeExpression(
+            input,
+            supportedAbbreviations: abbreviationMap
+        ) else {
+            return standardResult
+        }
+
+        return parseAndConvert(
+            normalizedInput,
+            to: destinationTimeZone,
+            now: now,
+            calendar: calendar
+        )
     }
 
     func utcOffsetString(for timeZone: TimeZone, at date: Date = Date()) -> String {

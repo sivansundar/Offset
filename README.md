@@ -20,6 +20,7 @@ https://github.com/user-attachments/assets/e07b263c-731e-4700-93da-973c83c11685
 
 - Menu bar app with live local time
 - Quick natural-language time conversion
+- Optional Apple Intelligence-assisted parsing for fuzzier typed phrases on supported Macs
 - World clock dashboard with configurable cities
 - macOS Services integration for selected text
 - Lightweight tooltip presentation near the current selection
@@ -85,6 +86,8 @@ The converter parses common timezone abbreviations and supports:
 - 12-hour times like `9AM PT`
 - 24-hour times like `14:00 CET`
 - Day references like `today`, `tomorrow`, `Monday`, and `next Friday`
+
+When enabled in settings, Offset can also ask Apple's on-device model to normalize harder-to-parse typed phrases on Macs where Apple Intelligence is available.
 
 ### World Clocks
 

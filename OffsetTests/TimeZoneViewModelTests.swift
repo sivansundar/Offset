@@ -32,7 +32,12 @@ final class TimeZoneViewModelTests: XCTestCase {
         let viewModel = makeViewModel(store: makeIsolatedStore(name: #function))
         viewModel.inputText = "9AM PT"
 
-        viewModel.submitConversion()
+        let expectation = expectation(description: "conversion")
+        Task {
+            await viewModel.submitConversion()
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 2.0)
 
         XCTAssertEqual(viewModel.inlineResult, "9:00 AM PT -> 10:30 PM IST (your local time)")
     }
@@ -41,9 +46,38 @@ final class TimeZoneViewModelTests: XCTestCase {
         let viewModel = makeViewModel(store: makeIsolatedStore(name: #function))
         viewModel.inputText = "hello there"
 
-        viewModel.submitConversion()
+        let expectation = expectation(description: "conversion")
+        Task {
+            await viewModel.submitConversion()
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 2.0)
 
         XCTAssertEqual(viewModel.inlineResult, "Couldn't parse that time. Include a timezone like 'PT' or 'EST'.")
+    }
+
+    func testAppleIntelligencePreferencePersists() {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
+        defer { defaults.removePersistentDomain(forName: #function) }
+
+        let preferencesStore = PreferencesStore(
+            userDefaults: defaults,
+            appleIntelligenceKey: "test.useAppleIntelligence"
+        )
+        let viewModel = makeViewModel(
+            store: makeIsolatedStore(name: "\(#function).store"),
+            preferencesStore: preferencesStore
+        )
+
+        viewModel.useAppleIntelligence = true
+
+        let reloadedViewModel = makeViewModel(
+            store: makeIsolatedStore(name: "\(#function).store.reloaded"),
+            preferencesStore: preferencesStore
+        )
+
+        XCTAssertTrue(reloadedViewModel.useAppleIntelligence)
     }
 
     func testLocalTimeZoneLabelUsesLocalizedSystemName() {
@@ -73,9 +107,12 @@ final class TimeZoneViewModelTests: XCTestCase {
         XCTAssertFalse(reloadedViewModel.worldClocks.contains(where: { $0.timeZoneIdentifier == "America/Los_Angeles" }))
     }
 
-    private func makeViewModel(store: WorldClockStore = WorldClockStore()) -> TimeZoneViewModel {
+    private func makeViewModel(
+        store: WorldClockStore = WorldClockStore(),
+        preferencesStore: PreferencesStore = PreferencesStore()
+    ) -> TimeZoneViewModel {
         TimeZoneViewModel(
-            converter: TimeConverter(),
+            converter: TimeConverter(appleIntelligenceParser: NoOpAppleIntelligenceParser()),
             nowProvider: { ISO8601DateFormatter().date(from: "2026-01-15T12:00:00Z")! },
             timeZoneProvider: { TimeZone(identifier: "Asia/Kolkata")! },
             calendarProvider: {
@@ -83,7 +120,9 @@ final class TimeZoneViewModelTests: XCTestCase {
                 calendar.timeZone = TimeZone(secondsFromGMT: 0)!
                 return calendar
             },
-            worldClockStore: store
+            worldClockStore: store,
+            preferencesStore: preferencesStore,
+            appleIntelligenceAvailabilityProvider: { .available }
         )
     }
 
@@ -97,5 +136,18 @@ final class TimeZoneViewModelTests: XCTestCase {
             userDefaults: defaults,
             storageKey: "test.savedWorldClockIdentifiers"
         )
+    }
+}
+
+private struct NoOpAppleIntelligenceParser: AppleIntelligenceTimeParsing {
+    func availability() -> AppleIntelligenceAvailability {
+        .available
+    }
+
+    func normalizeTimeExpression(
+        _ input: String,
+        supportedAbbreviations: [String: String]
+    ) async -> String? {
+        nil
     }
 }

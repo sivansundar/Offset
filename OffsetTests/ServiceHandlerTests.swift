@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class ServiceHandlerTests: XCTestCase {
-    func testHandleSelectedTextBuildsSuccessNotification() {
+    func testHandleSelectedTextBuildsSuccessNotification() async {
         let handler = ServiceHandler(
             converter: TimeConverter(),
             presenter: TestServicePresenter(),
@@ -16,13 +16,13 @@ final class ServiceHandlerTests: XCTestCase {
             }
         )
 
-        let descriptor = handler.handleSelectedText("9AM PT")
+        let descriptor = await handler.handleSelectedText("9AM PT")
 
         XCTAssertEqual(descriptor.title, "Offset - Time Converted")
         XCTAssertEqual(descriptor.body, "9:00 AM PT = 10:30 PM IST")
     }
 
-    func testHandleSelectedTextBuildsFailureNotification() {
+    func testHandleSelectedTextBuildsFailureNotification() async {
         let handler = ServiceHandler(
             converter: TimeConverter(),
             presenter: TestServicePresenter(),
@@ -35,14 +35,80 @@ final class ServiceHandlerTests: XCTestCase {
             }
         )
 
-        let descriptor = handler.handleSelectedText("nothing to see here")
+        let descriptor = await handler.handleSelectedText("nothing to see here")
 
         XCTAssertEqual(descriptor.body, "Couldn't find a time in the selected text.")
     }
+
+    func testConvertSelectedTimeShowsLoadingTooltipBeforeResult() async {
+        let presenter = RecordingServicePresenter()
+        let handler = ServiceHandler(
+            converter: TimeConverter(),
+            presenter: presenter,
+            anchorResolver: TestAnchorResolver(
+                anchor: ServicePresentationAnchor(
+                    selectionRect: CGRect(x: 10, y: 20, width: 30, height: 40),
+                    pointerLocation: CGPoint(x: 50, y: 60)
+                )
+            ),
+            destinationTimeZoneProvider: { TimeZone(identifier: "Asia/Kolkata")! },
+            nowProvider: { ISO8601DateFormatter().date(from: "2026-01-15T12:00:00Z")! },
+            calendarProvider: {
+                var calendar = Calendar(identifier: .gregorian)
+                calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+                return calendar
+            }
+        )
+        let pasteboard = NSPasteboard.withUniqueName()
+        pasteboard.setString("9AM PT", forType: .string)
+        var serviceError: NSString?
+
+        handler.convertSelectedTime(pasteboard, userData: nil, error: &serviceError)
+
+        XCTAssertEqual(
+            presenter.presentedDescriptors.first,
+            ServiceResultDescriptor(
+                title: "Offset - Time Converted",
+                body: "Checking the selected text...",
+                isLoading: true
+            )
+        )
+
+        let deadline = Date().addingTimeInterval(2)
+        while presenter.presentedDescriptors.count < 2 && Date() < deadline {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(presenter.presentedDescriptors.count, 2)
+        XCTAssertEqual(presenter.presentedDescriptors.last?.body, "9:00 AM PT = 10:30 PM IST")
+        XCTAssertEqual(
+            presenter.presentedAnchors,
+            [
+                ServicePresentationAnchor(
+                    selectionRect: CGRect(x: 10, y: 20, width: 30, height: 40),
+                    pointerLocation: CGPoint(x: 50, y: 60)
+                ),
+                ServicePresentationAnchor(
+                    selectionRect: CGRect(x: 10, y: 20, width: 30, height: 40),
+                    pointerLocation: CGPoint(x: 50, y: 60)
+                )
+            ]
+        )
+    }
 }
 
-private struct TestServicePresenter: ServiceResultPresenting {
+private final class TestServicePresenter: ServiceResultPresenting {
     func present(_ descriptor: ServiceResultDescriptor, anchor: ServicePresentationAnchor) {}
+}
+
+private final class RecordingServicePresenter: ServiceResultPresenting {
+    private(set) var presentedDescriptors: [ServiceResultDescriptor] = []
+    private(set) var presentedAnchors: [ServicePresentationAnchor] = []
+
+    func present(_ descriptor: ServiceResultDescriptor, anchor: ServicePresentationAnchor) {
+        presentedDescriptors.append(descriptor)
+        presentedAnchors.append(anchor)
+    }
 }
 
 private struct TestAnchorResolver: ServicePresentationAnchoring {

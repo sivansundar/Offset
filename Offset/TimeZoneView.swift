@@ -134,12 +134,19 @@ final class TimeZoneViewModel: ObservableObject {
     @Published private(set) var referenceDate: Date
     @Published var screen: Screen = .clocks
     @Published var timeZoneSearchText = ""
+    @Published var useAppleIntelligence: Bool {
+        didSet {
+            preferencesStore.saveUseAppleIntelligence(useAppleIntelligence)
+        }
+    }
 
     private let converter: TimeConverter
     private let nowProvider: () -> Date
     private let timeZoneProvider: () -> TimeZone
     private let calendarProvider: () -> Calendar
     private let worldClockStore: WorldClockStore
+    private let preferencesStore: PreferencesStore
+    private let appleIntelligenceAvailabilityProvider: () -> AppleIntelligenceAvailability
     private var worldClockConfigurations: [WorldClockConfiguration]
 
     init(
@@ -147,16 +154,23 @@ final class TimeZoneViewModel: ObservableObject {
         nowProvider: @escaping () -> Date = Date.init,
         timeZoneProvider: @escaping () -> TimeZone = { .autoupdatingCurrent },
         calendarProvider: @escaping () -> Calendar = { .autoupdatingCurrent },
-        worldClockStore: WorldClockStore = WorldClockStore()
+        worldClockStore: WorldClockStore = WorldClockStore(),
+        preferencesStore: PreferencesStore = PreferencesStore(),
+        appleIntelligenceAvailabilityProvider: @escaping () -> AppleIntelligenceAvailability = {
+            AppleIntelligenceTimeParser().availability()
+        }
     ) {
         self.converter = converter
         self.nowProvider = nowProvider
         self.timeZoneProvider = timeZoneProvider
         self.calendarProvider = calendarProvider
         self.worldClockStore = worldClockStore
+        self.preferencesStore = preferencesStore
+        self.appleIntelligenceAvailabilityProvider = appleIntelligenceAvailabilityProvider
         self.referenceDate = nowProvider()
         self.worldClockConfigurations = worldClockStore.load()
         self.worldClocks = WorldClockEntry.entries(from: worldClockConfigurations, converter: converter)
+        self.useAppleIntelligence = preferencesStore.loadUseAppleIntelligence()
     }
 
     var localTimeString: String {
@@ -194,9 +208,14 @@ final class TimeZoneViewModel: ObservableObject {
             }
     }
 
-    func submitConversion() {
-        switch converter.parseAndConvert(
+    var appleIntelligenceStatusMessage: String {
+        appleIntelligenceAvailabilityProvider().statusMessage
+    }
+
+    func submitConversion() async {
+        switch await converter.parseAndConvert(
             inputText,
+            usingAppleIntelligence: useAppleIntelligence,
             to: timeZoneProvider(),
             now: nowProvider(),
             calendar: calendarProvider()
@@ -639,6 +658,29 @@ struct TimeZoneView: View {
             .modifier(PanelCardModifier(namespace: glassNamespace, id: "selected-zones"))
 
             VStack(alignment: .leading, spacing: 12) {
+                Text("Time Parsing")
+                    .font(.headline)
+
+                Toggle(isOn: $viewModel.useAppleIntelligence) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Use Apple Intelligence")
+                            .font(.body.weight(.medium))
+                        Text("Use Apple's on-device model when a typed time phrase needs extra help parsing.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.switch)
+
+                Text(viewModel.appleIntelligenceStatusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(18)
+            .modifier(PanelCardModifier(namespace: glassNamespace, id: "time-parsing"))
+
+            VStack(alignment: .leading, spacing: 12) {
                 Text("Add city")
                     .font(.headline)
 
@@ -723,9 +765,7 @@ struct TimeZoneView: View {
                 return
             }
 
-            withAnimation(.easeInOut(duration: 0.2)) {
-                viewModel.submitConversion()
-            }
+            await viewModel.submitConversion()
 
             resultPulse.toggle()
 

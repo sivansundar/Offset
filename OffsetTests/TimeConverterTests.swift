@@ -115,6 +115,60 @@ final class TimeConverterTests: XCTestCase {
         )
     }
 
+    func testAppleIntelligenceFallbackCanRecoverUnsupportedFreeformInput() async throws {
+        let converter = TimeConverter(
+            appleIntelligenceParser: MockAppleIntelligenceParser(
+                normalizedExpressions: ["noon in tokyo tomorrow": "tomorrow 12:00 JST"]
+            )
+        )
+        let conversion = await converter.parseAndConvert(
+            "noon in tokyo tomorrow",
+            usingAppleIntelligence: true,
+            to: ist,
+            now: fixedDate("2026-01-15T12:00:00Z"),
+            calendar: gregorianUTC()
+        )
+
+        let result = try XCTUnwrap(conversion.value)
+
+        XCTAssertEqual(result.notificationBody, "12:00 PM JST on tomorrow = 8:30 AM IST")
+    }
+
+    func testAppleIntelligenceFailureReturnsFriendlyError() async {
+        let converter = TimeConverter(
+            appleIntelligenceParser: MockAppleIntelligenceParser(normalizedExpressions: [:])
+        )
+        let result = await converter.parseAndConvert(
+            "lunch sometime soon",
+            usingAppleIntelligence: true,
+            to: ist,
+            now: fixedDate("2026-01-15T12:00:00Z"),
+            calendar: gregorianUTC()
+        )
+
+        XCTAssertEqual(
+            result.error,
+            .missingTimeZone
+        )
+    }
+
+    func testAppleIntelligenceIsConsultedWhenEnabled() async {
+        let parser = RecordingAppleIntelligenceParser(
+            normalizedExpressions: [:]
+        )
+        let converter = TimeConverter(appleIntelligenceParser: parser)
+        let result = await converter.parseAndConvert(
+            "OpenRouter does a lot more than",
+            usingAppleIntelligence: true,
+            to: ist,
+            now: fixedDate("2026-01-15T12:00:00Z"),
+            calendar: gregorianUTC()
+        )
+
+        XCTAssertEqual(result.error, .missingTimeZone)
+        XCTAssertEqual(parser.normalizeCallCount, 1)
+    }
+
     private func fixedDate(_ iso8601: String) -> Date {
         ISO8601DateFormatter().date(from: iso8601)!
     }
@@ -123,6 +177,42 @@ final class TimeConverterTests: XCTestCase {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         return calendar
+    }
+}
+
+private struct MockAppleIntelligenceParser: AppleIntelligenceTimeParsing {
+    let normalizedExpressions: [String: String]
+
+    func availability() -> AppleIntelligenceAvailability {
+        .available
+    }
+
+    func normalizeTimeExpression(
+        _ input: String,
+        supportedAbbreviations: [String: String]
+    ) async -> String? {
+        normalizedExpressions[input]
+    }
+}
+
+private final class RecordingAppleIntelligenceParser: AppleIntelligenceTimeParsing {
+    let normalizedExpressions: [String: String]
+    private(set) var normalizeCallCount = 0
+
+    init(normalizedExpressions: [String: String]) {
+        self.normalizedExpressions = normalizedExpressions
+    }
+
+    func availability() -> AppleIntelligenceAvailability {
+        .available
+    }
+
+    func normalizeTimeExpression(
+        _ input: String,
+        supportedAbbreviations: [String: String]
+    ) async -> String? {
+        normalizeCallCount += 1
+        return normalizedExpressions[input]
     }
 }
 
